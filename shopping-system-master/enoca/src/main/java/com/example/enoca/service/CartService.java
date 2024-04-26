@@ -40,6 +40,9 @@ public class CartService {
     public ResponseEntity<CartResponse> addProductToCart(CartDto cartDto, HttpServletRequest httpServletRequest) {
         final Optional<Customer> customer = getCustomerByBearer(httpServletRequest);
         Optional<Product> product = productRepo.findById(cartDto.getpId());
+        if (product.isEmpty()){
+            return getCartResponseResponseEntity("product not found", null, null, HttpStatus.NOT_FOUND);
+        }
         if (cartDto.getAmount() <= product.get().getStock()){
             product.get().setStock(product.get().getStock()-cartDto.getAmount());
             productRepo.save(product.get());
@@ -49,12 +52,12 @@ public class CartService {
                     cart.setAmount(cart.getAmount()+cartDto.getAmount());
                     cart.setTotalProductPrice(cart.getTotalProductPrice()+(cartDto.getAmount()*productRepo.findById(cartDto.getpId()).get().getPrice()));
                     cartRepo.save(cart);
-                    return getCartResponseResponseEntity("product added", getCarts(httpServletRequest).getBody().getCart(), cartTotal(customer.get()).getTotalPrice(), HttpStatus.OK);
+                    return getCartResponseResponseEntity("product added", cartRepo.findCartsByCustomer(customer.get()), cartTotal(customer.get()).getTotalPrice(), HttpStatus.OK);
                 }
-                Cart newCart = createNewCart(customer,cartDto);
+                Cart newCart = createNewCart(customer.get(),cartDto);
                 cartRepo.save(newCart);
                 cartTotal(customer.get());
-                return getCartResponseResponseEntity("new product added", getCarts(httpServletRequest).getBody().getCart(), cartTotal(customer.get()).getTotalPrice(), HttpStatus.OK);
+                return getCartResponseResponseEntity("new product added", cartRepo.findCartsByCustomer(customer.get()), cartTotal(customer.get()).getTotalPrice(), HttpStatus.OK);
             }
         }
         return getCartResponseResponseEntity("not enough stock", null, null, HttpStatus.BAD_REQUEST);
@@ -71,13 +74,12 @@ public class CartService {
     private Optional<Customer> getCustomerByBearer(HttpServletRequest httpServletRequest) {
         String bearer = httpServletRequest.getHeader("Authorization");
         Long customerId = jwtTokenProvider.getUserIdFromJwt(bearer.substring("Bearer".length()+1));
-        Optional<Customer> customer = customerRepo.findById(customerId);
-        return customer;
+        return customerRepo.findById(customerId);
     }
 
-    public Cart createNewCart(Optional<Customer> customer, CartDto cartDto){
+    public Cart createNewCart(Customer customer, CartDto cartDto){
         Cart newCart = new Cart();
-        newCart.setCustomer(customer.get());
+        newCart.setCustomer(customer);
         newCart.setPrId(cartDto.getpId());
         newCart.setAmount(cartDto.getAmount());
         newCart.setPrice(productRepo.findById(cartDto.getpId()).get().getPrice());
@@ -111,7 +113,7 @@ public class CartService {
             cartTotal.setTotalPrice(cartTotal.getTotalPrice() - (cartDto.getAmount() * product.get().getPrice()));
             cartTotalRepo.save(cartTotal);
             cartRepo.deleteById(cart.getCartId());
-            return getCartResponseResponseEntity("product deleted", getCarts(httpServletRequest).getBody().getCart(), cartTotal.getTotalPrice(), HttpStatus.OK);
+            return getCartResponseResponseEntity("product deleted", cartRepo.findCartsByCustomer(customer.get()), cartTotal.getTotalPrice(), HttpStatus.OK);
         }
         else {
             cart.setAmount(cart.getAmount()-cartDto.getAmount());
@@ -119,7 +121,7 @@ public class CartService {
             cartTotal.setTotalPrice(cartTotal.getTotalPrice() - (cartDto.getAmount() * product.get().getPrice()));
             cartRepo.save(cart);
             cartTotalRepo.save(cartTotal);
-            return getCartResponseResponseEntity("product deleted", getCarts(httpServletRequest).getBody().getCart(), cartTotal.getTotalPrice(),HttpStatus.OK);
+            return getCartResponseResponseEntity("product deleted", cartRepo.findCartsByCustomer(customer.get()), cartTotal.getTotalPrice(),HttpStatus.OK);
         }
     }
 
@@ -154,7 +156,6 @@ public class CartService {
             if(c!=null) {
                 Customer customer = c.getCustomer();
                 Optional<Product> product = productRepo.findById(pId);
-                CartTotal cartTotal = cartTotalRepo.findCartTotalByCustomer(customer);
                 c.setPrice(product.get().getPrice());
                 c.setTotalProductPrice(c.getAmount() * c.getPrice());
                 cartRepo.save(c);
